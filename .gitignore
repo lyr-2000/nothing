@@ -1,0 +1,11 @@
+*.bin
+*.log
+log
+tmp
+cache/
+__pycache__
+*.c
+backtest_result/
+backtest_result
+*.html
+*.txt
