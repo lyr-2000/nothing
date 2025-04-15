@@ -186,7 +186,11 @@ def plot_output(stock_code,stock_name,dir='./backtest_result'):
             w.write(dict_to_html(b))
             w.write(a.to_html())
             w.write(f'{s}')
-    return
+    vobj = {
+        'stat': b,
+        'records': a.to_json(orient="records"),
+    }
+    return vobj
 
 # 主程序
 if __name__ == '__test1__':
@@ -197,6 +201,7 @@ if __name__ == '__test1__':
     df = df_raw.tail(365*3)
     fig = plot_strategy( df, stock_code,rows=3+4,graph_height=800)  # 展示最近120天
     a,b = backtest_strategy(df,trigger_signal=['吸筹'],)
+
     # fig.show()
     # fig.write_html(f"./demo_{stock_code}.html",encoding='utf-8')
     s = fig.to_html()
