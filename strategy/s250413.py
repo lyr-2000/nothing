@@ -17,6 +17,7 @@ def calculate_xi_chou(df):
     df['S5'] = (~df['name'].str.contains('C')).astype(int)
     df['S6'] = (~df['is_创业板']).astype(int)
     df['S7'] = (~df['is_北证50']).astype(int)
+    # 去除这些有问题的
     df['去除'] = df['S1'] & df['S2'] & df['S5'] & df['S4'] & df['S6'] & df['S7']
     LOW = df.low.values
     CLOSE = df.close.values
