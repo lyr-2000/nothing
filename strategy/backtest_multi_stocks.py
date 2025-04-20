@@ -194,13 +194,15 @@ def calculate_indicators(df):
 
 def calculate_indicators_inner(df):
     """计算技术指标，根据通达信代码s250415.txt实现，使用MyTT库"""
+    df['去除'] =1 # 已经筛选过了
     # 准备OPEN, CLOSE, HIGH, LOW, VOL数据
     OPEN = np.array(df['open'])
     CLOSE = np.array(df['close'])
     HIGH = np.array(df['high'])
     LOW = np.array(df['low'])
     VOL = np.array(df['volume'])
-    
+    C=CLOSE 
+    O = OPEN
     # 计算均线 MA
     df['MA5'] = MA(CLOSE, 5)
     df['MA10'] = MA(CLOSE, 10)
@@ -253,25 +255,32 @@ def calculate_indicators_inner(df):
     
     # VAR2到VAR9计算
     df['VAR2'] = REF(LOW, 1)
-    
     # VAR3:=SMA(ABS(LOW-VAR2),3,1)/SMA(MAX(LOW-VAR2,0),3,1)*100;
-    # 安全处理VAR3计算
-    try:
-        abs_diff = np.array(ABS(LOW - df['VAR2']))
-        max_diff = np.array(MAX(LOW - df['VAR2'], 0))
-        
-        sma1 = np.array(SMA(abs_diff, 3, 1))
-        sma2 = np.array(SMA(max_diff, 3, 1))
-        
-        var3 = np.zeros(len(CLOSE))
-        for i in range(len(CLOSE)):
-            if sma2[i] > 0:  # 避免除以0
-                var3[i] = sma1[i] / sma2[i] * 100
-        
-        df['VAR3'] = var3
-    except Exception as e:
-        print(f"VAR3计算异常: {str(e)}")
-        # df['VAR3'] = 0  # 出错时设为0
+    LOW_arr = np.array(LOW)
+    VAR2_arr = np.array(df['VAR2'])
+    
+    # 计算 ABS(LOW-VAR2)
+    abs_diff = np.abs(LOW_arr - VAR2_arr)
+    
+    # 计算 MAX(LOW-VAR2,0)
+    diff = LOW_arr - VAR2_arr
+    max_diff = np.maximum(diff, 0)
+    
+    # 计算 SMA(ABS(LOW-VAR2),3,1)
+    sma_abs_diff = SMA(abs_diff, 3, 1)
+    
+    # 计算 SMA(MAX(LOW-VAR2,0),3,1)
+    sma_max_diff = SMA(max_diff, 3, 1)
+    
+    # 安全处理除法，避免除以零
+    VAR3 = np.zeros(len(LOW))
+    for i in range(len(LOW)):
+        if sma_max_diff[i] != 0:
+            VAR3[i] = (sma_abs_diff[i] / sma_max_diff[i]) * 100
+        else:
+            VAR3[i] = 0
+    
+    df['VAR3'] = VAR3
     
     # VAR4:=EMA(IF(CLOSE*1.3,VAR3*10,VAR3/10),3);
     condition = np.array([c * 1.3 > 0 for c in CLOSE], dtype=bool)
@@ -285,35 +294,24 @@ def calculate_indicators_inner(df):
     df['VAR6'] = HHV(df['VAR4'], 13)
     
     # VAR7:=IF(MA(CLOSE,34),1,0);
-    # 安全处理MA条件判断
-    try:
-        ma34 = np.array(MA(CLOSE, 34))
-        condition = np.array([m > 0 for m in ma34], dtype=bool)
-    except:
-        condition = np.zeros(len(CLOSE), dtype=bool)  # 异常时设为False而不是True
-    
+    MA_CLOSE = MA(CLOSE, 34)
+    condition = np.array([ma > 0 for ma in MA_CLOSE], dtype=bool)
     df['VAR7'] = IF(condition, 1, 0)
-    
+     
     # VAR8:=EMA(IF(LOW<=VAR5,(VAR4+VAR6*2)/2,0),3)/618*VAR7;
     LOW_arr = np.array(LOW)
-    VAR5_arr = np.array(df['VAR5'])
-    condition = np.array([l <= v5 for l, v5 in zip(LOW_arr, VAR5_arr)], dtype=bool)
-    VAR4_arr = np.array(df['VAR4'])
-    VAR6_arr = np.array(df['VAR6'])
-    value = IF(condition, (VAR4_arr + VAR6_arr * 2) / 2, 0)
-    VAR7_arr = np.array(df['VAR7'])
+    VAR5 = np.array(df['VAR5'])
+    condition = np.array([l <= v5 for l, v5 in zip(LOW_arr, VAR5)], dtype=bool)
+    VAR4 = np.array(df['VAR4'])
+    VAR6 = np.array(df['VAR6'])
+    value = IF(condition, (VAR4 + VAR6 * 2) / 2, 0)
+    VAR7 = np.array(df['VAR7'])
+    # 计算VAR8
     
-    # 安全处理VAR8计算
-    try:
-        ema_val = np.array(EMA(value, 3))
-        var8 = np.zeros(len(CLOSE))
-        for i in range(len(CLOSE)):
-            var8[i] = ema_val[i] / 618 * VAR7_arr[i]
-        
-        df['VAR8'] = var8
-    except Exception as e:
-        print(f"VAR8计算异常: {str(e)}")
-        # df['VAR8'] = 0  # 出错时设为0
+    df['VAR8'] =  EMA(IF(LOW<=VAR5,(VAR4+VAR6*2)/2,0),3)/618*VAR7;
+
+
+
     
     # VAR9:=IF(VAR8>100,100,VAR8);
     VAR8_arr = np.array(df['VAR8'])
@@ -329,20 +327,7 @@ def calculate_indicators_inner(df):
     REF_CLOSE = REF(CLOSE_arr, 1)
     
     # 安全处理下影线计算
-    try:
-        left_part = np.zeros(len(CLOSE))
-        right_part = np.zeros(len(CLOSE))
-        
-        ref_close_arr = np.array(REF_CLOSE)
-        for i in range(len(CLOSE)):
-            if ref_close_arr[i] > 0:  # 避免除以0
-                left_part[i] = (OPEN_arr[i] - LOW_arr[i]) / ref_close_arr[i]
-                right_part[i] = (HIGH_arr[i] - CLOSE_arr[i]) / ref_close_arr[i] * 2
-        
-        df['下影线'] = np.array(left_part > right_part, dtype=bool)
-    except Exception as e:
-        print(f"下影线计算异常: {str(e)}")
-        # df['下影线'] = False  # 出错时设为False
+    df['下影线'] = MIN(CLOSE_arr, OPEN_arr) - LOW_arr
     
     # 放量:=VOL>REF(VOL,1);
     df['放量'] = np.array(VOL > REF(VOL, 1), dtype=bool)
@@ -357,103 +342,91 @@ def calculate_indicators_inner(df):
     df['阳线'] = np.array(CLOSE_arr > OPEN_arr, dtype=bool)
     
     # 计算真阳线
-    df['真阳线'] = (df['close'] > 0) & (df['close'] / df['close'].shift(1) >= 1)
+    真阳线条件1 = CLOSE_arr > OPEN_arr
+    真阳线条件2 = (CLOSE_arr / REF(CLOSE_arr, 1)) >= 1
+    df['真阳线'] = np.array(真阳线条件1 & 真阳线条件2, dtype=bool)
+    df['前一天条件'] = (df['下影线'] >= df['上影线'] * 2) & (CLOSE/REF(CLOSE,1) <= 1.03) & (CLOSE >= OPEN) & (CLOSE >= REF(CLOSE,1)) & (REF(CLOSE,1) <= REF(OPEN,1)) & (LOW < REF(CLOSE,1))
+    前一天条件_arr = np.array(REF(df['前一天条件'], 1), dtype=bool)
+    # 计算下影线成功和失败条件
+    成功条件 = 前一天条件_arr & (CLOSE_arr/REF(CLOSE_arr,1) >= 1)
+    失败条件 = 前一天条件_arr & (CLOSE_arr/REF(CLOSE_arr,1) <= 1)
     
-    # 前一天条件
-    df['前一天条件'] = (df['下影线']) & \
-                    (df['close'] / df['close'].shift(1) <= 1.03) & \
-                    (df['close'] >= df['open']) & \
-                    (df['close'] >= df['close'].shift(1)) & \
-                    (df['close'].shift(1) <= df['open'].shift(1)) & \
-                    (df['low'] < df['close'].shift(1))
-    
-    # 计算下影线成功和失败
-    df['下影线成功'] = df['前一天条件'].shift(1) & (df['close'] / df['close'].shift(1) >= 1)
-    df['下影线失败'] = df['前一天条件'].shift(1) & (df['close'] / df['close'].shift(1) <= 1)
-    
+    df['下影线成功'] = COUNT(成功条件, 120)
+    df['下影线失败'] = COUNT(失败条件, 120)
+    df['下影线条件'] = np.array((OPEN_arr - LOW_arr) / REF(CLOSE_arr, 1) > (HIGH_arr - CLOSE_arr) / REF(CLOSE_arr, 1) * 2, dtype=bool)
     # 计算下影线性价比
-    success_count = df['下影线成功'].rolling(120).sum()
-    failure_count = df['下影线失败'].rolling(120).sum()
-    df['下影线性价比'] = np.where(failure_count == 0, np.nan, success_count / failure_count)
+    df['下影线性价比'] = np.where(df['下影线失败'] == 0, 10, df['下影线成功'] / df['下影线失败'])
     
+    # ZD:=C>REF(C,1)
+    ZD = np.array(CLOSE_arr > REF(CLOSE_arr, 1), dtype=bool)
     
+    # LX:=BARSLASTCOUNT(ZD)
+    LX = np.zeros(len(CLOSE_arr))
+    count = 0
+    for i in range(len(CLOSE_arr)):
+        if ZD[i]:
+            count += 1
+            LX[i] = count
+        else:
+            count = 0
+            
+    # TJ:=LX>=2
+    TJ = np.array(LX >= 2, dtype=bool)
     
-    # 连续阳线计算
-    # ZD:=C>REF(C,1);
-    df['ZD'] = np.array(CLOSE_arr > REF(CLOSE_arr, 1), dtype=bool)
+    # TJ1:=REF(TJ,1)=0 AND TJ
+    TJ1 = np.array(REF(TJ, 1) == 0) & TJ
     
-    # LX:=BARSLASTCOUNT(ZD);
-    ZD_arr = np.array(df['ZD'])
-    df['LX'] = BARSLASTCOUNT(ZD_arr)
-    
-    # TJ:=LX>=2;
-    LX_arr = np.array(df['LX'])
-    df['TJ'] = np.array(LX_arr >= 2, dtype=bool)
-    
-    # TJ1:=REF(TJ,1)=0 AND TJ;
-    TJ_arr = np.array(df['TJ'])
-    cond1 = np.array(REF(TJ_arr, 1) == 0, dtype=bool)
-    cond2 = np.array(TJ_arr, dtype=bool)
-    df['TJ1'] = cond1 & cond2
-    
-    # 连续阳线次:=COUNT(TJ1,120);
-    TJ1_arr = np.array(df['TJ1'])
-    df['连续阳线次'] = COUNT(TJ1_arr, 120)
-    
+    # 连续阳线次:COUNT(TJ1,120)
+    df['连续阳线次'] = COUNT(TJ1, 120)
     # 下影加连阳:=连续阳线次+下影线性价比;
     连续阳线次_arr = np.array(df['连续阳线次'])
     下影线性价比_arr = np.array(df['下影线性价比'])
     df['下影加连阳'] = 连续阳线次_arr + 下影线性价比_arr
+    # 连续阳线计算
+    df['吸筹指标']= df['VAR9']
     
-    # 去除条件（这里暂时简化处理）
-    # 去除:=S1 AND S2 AND S5 AND S4 AND S6 AND S7;
-    df['去除'] = np.ones(len(CLOSE), dtype=bool)  # 全部设为True
-    df['吸筹指标'] = df['VAR9']
-    # 吸筹信号
-    VAR9_arr = np.array(df['VAR9'])
-    去除_arr = np.array(df['去除'])
-    下影线_arr = np.array(df['下影线'])
-    下影线性价比_arr = np.array(df['下影线性价比'])
+    # ZD:=C>REF(C,1);
+    # 计算吸筹条件
+    # 调试每个条件
+    df['条件1'] = df['VAR9'] > 5
+    df['条件2'] = df['去除']
+    df['条件3'] = df['close']/df['close'].shift(1) < 1.03
+    df['条件4'] = df['close'] > df['open']
+    df['条件5'] = df['close'] >= df['close'].shift(1)
+    df['条件6'] = df['下影线条件']
+    df['条件7'] = df['close'].shift(1) <= df['open'].shift(1)
+    df['条件8'] = df['low'] < df['close'].shift(1)
+    df['条件9'] = df['下影线性价比'] > 2
+
+    # 打印2024-04-20这天各个条件的值
+    def debug_conditions(df):
+        target_date = '2022-03-30'
+        if target_date in df['t'].values:
+            print('第一天-- ',df['t'].values[0])
+            print(f"条件1 (VAR9 > 5): {df[df['t'] == target_date]['条件1'].values[0]}")
+            print(f"条件2 (去除): {df[df['t'] == target_date]['条件2'].values[0]}")
+            print(f"条件3 (涨幅<3%): {df[df['t'] == target_date]['条件3'].values[0]}")
+            print(f"条件4 (收阳): {df[df['t'] == target_date]['条件4'].values[0]}")
+            print(f"条件5 (收盘>昨收): {df[df['t'] == target_date]['条件5'].values[0]}")
+            print(f"条件6 (下影线): {df[df['t'] == target_date]['条件6'].values[0]}")
+            print(f"条件7 (昨日阴线): {df[df['t'] == target_date]['条件7'].values[0]}")
+            print(f"条件8 (最低<昨收): {df[df['t'] == target_date]['条件8'].values[0]}")
+            print(f"条件9 (下影线性价比>2): {df[df['t'] == target_date]['条件9'].values[0]}")
+            print(f"下影线性价比: {df[df['t'] == target_date]['下影线性价比'].values[0]}")
+            print(f"下影线成功: {df[df['t'] == target_date]['下影线成功'].values[0]}")
+            print(f"下影线失败: {df[df['t'] == target_date]['下影线失败'].values[0]}")
+            print(f"吸筹指标: {df[df['t'] == target_date]['吸筹指标'].values[0]}")
+            # print(f"吸筹: {df[df['t'] == target_date]['吸筹'].values[0]}")
+            
+    # debug_conditions(df)
+
+    df['吸筹'] = df['条件1'] & df['条件2'] & df['条件3'] & df['条件4'] & df['条件5'] & df['条件6'] & df['条件7'] & df['条件8'] & df['条件9']
     
-    cond1 = np.array(VAR9_arr > 5, dtype=bool)
-    cond2 = np.array(去除_arr, dtype=bool)
     
-    # 安全处理比率计算
-    cond3 = np.zeros(len(CLOSE), dtype=bool)
-    ref_close = np.array(REF(CLOSE_arr, 1))
-    for i in range(len(CLOSE)):
-        if ref_close[i] > 0:  # 避免除以0
-            cond3[i] = CLOSE_arr[i] / ref_close[i] < 1.03
-    
-    cond4 = np.array(CLOSE_arr > OPEN_arr, dtype=bool)
-    cond5 = np.array(CLOSE_arr >= REF(CLOSE_arr, 1), dtype=bool)
-    cond6 = np.array(下影线_arr, dtype=bool)
-    
-    # 安全处理前一天收盘与开盘比较
-    try:
-        ref_close = np.array(REF(CLOSE_arr, 1))
-        ref_open = np.array(REF(OPEN_arr, 1))
-        cond7 = np.array([rc <= ro for rc, ro in zip(ref_close, ref_open)], dtype=bool)
-    except:
-        cond7 = np.zeros(len(CLOSE), dtype=bool)  # 异常时设为False而不是True
-    
-    cond8 = np.array(LOW_arr < REF(CLOSE_arr, 1), dtype=bool)
-    cond9 = np.array(下影线性价比_arr > 2, dtype=bool)
-    
-    df['吸筹'] = cond1 & cond2 & cond3 & cond4 & cond5 & cond6 & cond7 & cond8 & cond9
-    df['_cond1']  = cond1
-    df['_cond2'] = cond2
-    df['_cond3'] = cond3
-    df['_cond4'] = cond4
-    df['_cond5'] = cond5
-    df['_cond6'] = cond6
-    df['_cond7'] = cond7
-    df['_cond8'] = cond8
-    df['_cond9'] = cond9
-    # 发现筛选有漏的,, 查找问题
-    def find_bug(x):
-        if x['t'] == '2024-02-05':
-            print(x[['_cond1','_cond2','_cond3','_cond4','_cond5','_cond6','_cond7','_cond8','_cond9','吸筹指标','下影线性价比','下影加连阳','吸筹']])
+    # # 发现筛选有漏的,, 查找问题
+    # def find_bug(x):
+    #     if x['t'] == '2023-03-30' and x['股票代码'] == '002196':
+    #         print(x)
     # df.apply(lambda x: find_bug(x), axis=1)
     return df
 
@@ -1675,8 +1648,9 @@ logging.basicConfig(
 
 if __name__ == '__main__':
     # 设置默认的回测参数（在try块外定义，确保始终可用）
-    start_date = datetime(2023, 1, 1)
-    end_date = datetime(2023, 12, 30)  # 测试1个月
+    y_year = 2022
+    start_date = datetime(y_year, 1, 1)
+    end_date = datetime(y_year, 12, 30)  # 测试1个月
     top_n = 1  # 每天选择前2支股票
     use_cache = True  # 是否使用缓存
     force_recalculate = False  # 是否强制重新计算

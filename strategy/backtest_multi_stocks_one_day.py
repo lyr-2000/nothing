@@ -164,7 +164,7 @@ if __name__ == "__main__":
     # 从命令行参数获取日期，默认为2025-03-05
     import argparse
     parser = argparse.ArgumentParser(description='测试指定日期的指标数据')
-    parser.add_argument('--date', type=str, default='2024-02-05', help='要测试的日期，格式为YYYY-MM-DD')
+    parser.add_argument('--date', type=str, default='2022-03-30', help='要测试的日期，格式为YYYY-MM-DD')
     parser.add_argument('--top', type=int, default=20000, help='要显示的股票数量')
     parser.add_argument('--limit', type=int, default=None, help='限制处理的股票数量')
     parser.add_argument('--all', action='store_true', help='使用所有股票，包括未交易的')

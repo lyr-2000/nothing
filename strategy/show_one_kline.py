@@ -125,10 +125,10 @@ def backtest_strategy(stock_code, start_date, end_date):
 
 if __name__ == '__main__':
     # 设置回测参数
-    stock_code = '600655'  #  
+    stock_code = '002196'  #  
     # stock_code = '600332'  # 
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)  # 回测一年
+    start_date = end_date - timedelta(days=365)*5  # 回测一年
     
     # 运行回测
     df = backtest_strategy(stock_code, start_date, end_date)
@@ -137,14 +137,16 @@ if __name__ == '__main__':
     print("\n数据统计:")
     print(f"回测期间: {start_date.date()} 至 {end_date.date()}")
     # print(df.head(10))
-    val = df[df['t'] == '2024-02-05']
+    val = df[df['t'] == '2022-03-30']
     # 显示所有列
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', 1000)
     pd.set_option('display.float_format', '{:.4f}'.format)
     pd.set_option('display.colheader_justify', 'center')
     pd.set_option('display.precision', 4)
-    print(val[['吸筹指标','下影线性价比','下影加连阳','吸筹']])
+    print('-'*90)
+    print(val)
+    print('-'*90)
 
     # print(f"吸筹信号次数: {df['吸筹'].sum()}")
     print(f"吸筹信号胜率: {(df[df['吸筹'] == True]['收益率'] > 0).mean() * 100:.2f}%")
