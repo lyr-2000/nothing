@@ -996,7 +996,7 @@ def backtest_strategy(start_date, end_date, top_n=2, use_cache=True, force_recal
                             
                             # 更新资金
                             capital += profit
-                            
+                            # curr = stock_data.iloc[current_idx] 
                             # 记录交易
                             trades_list.append({
                                 '日期': current_date,  # 原始信号日期
@@ -1004,6 +1004,8 @@ def backtest_strategy(start_date, end_date, top_n=2, use_cache=True, force_recal
                                 '卖出日期': sell_date,  # 实际卖出日期
                                 '股票代码': stock['股票代码'],
                                 '下影线性价比': stock['下影线性价比'],
+                                '下影加连阳':stock['下影加连阳'],
+                                '吸筹指标':stock['吸筹指标'],
                                 '买入价': buy_price,
                                 '卖出价': sell_price,
                                 '收益率': profit_rate,
