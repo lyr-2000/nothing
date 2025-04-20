@@ -1089,10 +1089,14 @@ def backtest_strategy(start_date, end_date, top_n=2, use_cache=True, force_recal
 def plot_stock_kline(stock_code, start_date=None, end_date=None, chart_dir='./charts'):
     """为单只股票生成K线图，突出显示吸筹信号，保存为HTML文件"""
     try:
+        
         # 创建图表目录
         if not os.path.exists(chart_dir):
             os.makedirs(chart_dir)
-            
+        
+        klineHtmlFilename = f"{chart_dir}/{stock_code}_kline.html"
+        if os.path.exists(klineHtmlFilename):    
+            return klineHtmlFilename
         # 获取足够长的历史数据
         if start_date is None:
             start_date = datetime.now() - timedelta(days=365*3)
@@ -1256,17 +1260,19 @@ def plot_stock_kline(stock_code, start_date=None, end_date=None, chart_dir='./ch
         fig.update_yaxes(title_text="VAR9吸筹指标", row=4, col=1)
         
         # 保存为HTML文件
-        filename = f"{chart_dir}/{stock_code}_kline.html"
+        # klineHtmlFilename = f"{chart_dir}/{stock_code}_kline.html"
+       
         try:
-            with open(f"{filename}", "w", encoding="utf8") as file:
+            with open(f"{klineHtmlFilename}", "w", encoding="utf8") as file:
                 write_html(fig, file)
-            print(f"已生成K线图: {filename}")
+            print(f"已生成K线图: {klineHtmlFilename}")
         except Exception as e:
             print(f"保存K线图文件异常: {str(e)}")
             import traceback
             traceback.print_exc()
+    
         
-        return filename
+        return klineHtmlFilename
     except Exception as e:
         print(f"绘制 {stock_code} K线图异常: {str(e)}")
         import traceback
