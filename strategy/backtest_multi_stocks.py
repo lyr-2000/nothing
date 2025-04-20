@@ -230,7 +230,7 @@ def calculate_indicators_inner(df):
         df['RSV'] = rsv
     except Exception as e:
         print(f"RSV计算异常: {str(e)}")
-        df['RSV'] = 0  # 出错时设为0
+        # df['RSV'] = 0  # 出错时设为0
     
     df['K'] = K
     df['D'] = D
@@ -271,7 +271,7 @@ def calculate_indicators_inner(df):
         df['VAR3'] = var3
     except Exception as e:
         print(f"VAR3计算异常: {str(e)}")
-        df['VAR3'] = 0  # 出错时设为0
+        # df['VAR3'] = 0  # 出错时设为0
     
     # VAR4:=EMA(IF(CLOSE*1.3,VAR3*10,VAR3/10),3);
     condition = np.array([c * 1.3 > 0 for c in CLOSE], dtype=bool)
@@ -313,7 +313,7 @@ def calculate_indicators_inner(df):
         df['VAR8'] = var8
     except Exception as e:
         print(f"VAR8计算异常: {str(e)}")
-        df['VAR8'] = 0  # 出错时设为0
+        # df['VAR8'] = 0  # 出错时设为0
     
     # VAR9:=IF(VAR8>100,100,VAR8);
     VAR8_arr = np.array(df['VAR8'])
@@ -342,7 +342,7 @@ def calculate_indicators_inner(df):
         df['下影线'] = np.array(left_part > right_part, dtype=bool)
     except Exception as e:
         print(f"下影线计算异常: {str(e)}")
-        df['下影线'] = False  # 出错时设为False
+        # df['下影线'] = False  # 出错时设为False
     
     # 放量:=VOL>REF(VOL,1);
     df['放量'] = np.array(VOL > REF(VOL, 1), dtype=bool)
@@ -498,7 +498,20 @@ def calculate_indicators_inner(df):
     cond9 = np.array(下影线性价比_arr > 2, dtype=bool)
     
     df['吸筹'] = cond1 & cond2 & cond3 & cond4 & cond5 & cond6 & cond7 & cond8 & cond9
-    
+    df['_cond1']  = cond1
+    df['_cond2'] = cond2
+    df['_cond3'] = cond3
+    df['_cond4'] = cond4
+    df['_cond5'] = cond5
+    df['_cond6'] = cond6
+    df['_cond7'] = cond7
+    df['_cond8'] = cond8
+    df['_cond9'] = cond9
+    # 发现筛选有漏的,, 查找问题
+    def find_bug(x):
+        if x['t'] == '2024-02-05':
+            print(x[['_cond1','_cond2','_cond3','_cond4','_cond5','_cond6','_cond7','_cond8','_cond9','吸筹指标','下影线性价比','下影加连阳','吸筹']])
+    df.apply(lambda x: find_bug(x), axis=1)
     return df
 
 def get_all_stocks():
@@ -510,16 +523,11 @@ def get_all_stocks():
         # 使用akshare获取股票列表
         stock_list = ak.stock_zh_a_spot_em()
         
-        # 添加股票属性信息
-        stock_list['S1'] = ~stock_list['名称'].str.contains('S')  # 非S股
-        stock_list['S2'] = ~stock_list['名称'].str.contains('\*')  # 非*股
-        stock_list['S4'] = ~stock_list['名称'].str.contains('科创板')  # 非科创板
-        stock_list['S5'] = ~stock_list['名称'].str.contains('C')  # 非C股
-        stock_list['S6'] = ~stock_list['名称'].str.contains('创业板')  # 非创业板
-        stock_list['S7'] = ~stock_list['名称'].str.contains('北证50')  # 非北证50
+
+     
         
         # 导出股票列表到CSV文件
-        export_columns = ['代码', '名称', 'S1', 'S2', 'S4', 'S5', 'S6', 'S7']
+        export_columns = ['代码', '名称']
         stock_list[export_columns].to_csv('stock_list.csv', index=False, encoding='utf-8-sig')
         print("股票列表已导出到 stock_list.csv")
         
@@ -530,29 +538,41 @@ def get_all_stocks():
         ]
         
         # 剔除ST股票（通过名称中是否包含"ST"判断）
-        non_st_stocks = active_stocks[
+        active_stocks = active_stocks[
             ~active_stocks['名称'].str.contains('ST|st|S\.T|退') 
         ]
-        
-        # 使用名称过滤不同类型的股票
-        non_s_stocks = non_st_stocks[~non_st_stocks['名称'].str.contains('S')]  # 非S股
-        non_star_stocks = non_s_stocks[~non_s_stocks['名称'].str.contains('\*')]  # 非*股
-        non_kechuang = non_star_stocks[~non_star_stocks['名称'].str.contains('科创板')]  # 非科创板
-        non_c_stocks = non_kechuang[~non_kechuang['名称'].str.contains('C')]  # 非C股
-        non_chuangye = non_c_stocks[~non_c_stocks['名称'].str.contains('创业板')]  # 非创业板
-        non_beizheng = non_chuangye[~non_chuangye['名称'].str.contains('北证50')]  # 非北证50
-        
-        print(f"总股票数: {len(stock_list)}, 活跃股票数: {len(active_stocks)}, 非ST股票数: {len(non_st_stocks)}, "
-              f"非S股数: {len(non_s_stocks)}, 非*股数: {len(non_star_stocks)}, "
-              f"非科创板股票数: {len(non_kechuang)}, 非C股数: {len(non_c_stocks)}, "
-              f"非创业板股票数: {len(non_chuangye)}, 非北证50股票数: {len(non_beizheng)}")
+        active_stocks = active_stocks[
+            ~active_stocks['名称'].str.contains('\*')  # type: ignore
+        ]
+
+        active_stocks = active_stocks[
+            ~active_stocks['名称'].str.contains('C') 
+        ]
+  
         
         # 提取股票代码
-        codes = non_beizheng['代码'].tolist()
-        
+        codes_old = active_stocks['代码'].tolist()
+        codes = []
+        for v in codes_old:
+            if str(v).startswith('300'):
+                continue
+            if str(v).startswith('688'):
+                continue
+            if str(v).startswith('301'):
+                continue
+            if str(v).startswith('4'):
+                continue
+            if str(v).startswith('8'):
+                continue
+            if str(v).startswith('9'):
+                continue
+            if str(v).startswith('60') or str(v).startswith('00'):
+                 codes.append(v)
+            continue
+            
         # 缓存股票名称映射
         try:
-            name_mapping = dict(zip(non_beizheng['代码'], non_beizheng['名称']))
+            name_mapping = dict(zip(active_stocks['代码'], active_stocks['名称']))
             name_cache_file = os.path.join(CACHE_DIR, 'stock_names.json')
             with open(name_cache_file, 'w', encoding='utf-8') as f:
                 json.dump(name_mapping, f, ensure_ascii=False)
@@ -630,7 +650,7 @@ def process_single_stock(stock_code, date):
         print(f"处理股票 {stock_code} 数据异常: {str(e)}")
         return None
 
-def select_stocks_from_preprocessed(date, all_stock_results, top_n=10):
+def select_stocks_from_preprocessed(date, all_stock_results, top_n=100):
     """从预处理的结果中选择指定日期的前N支股票
     
     优先按照"下影加连阳"降序排序，若值相同则按"下影线性价比"降序排序，最后按"吸筹指标"降序排序
@@ -681,11 +701,60 @@ def select_stocks_from_preprocessed(date, all_stock_results, top_n=10):
         else:
             print("警告: 没有可用的排序字段，返回原始数据")
         
-        results_df=results_df[results_df['吸筹指标']>5]
+        results_df=results_df
         
         return results_df.head(top_n).copy()
     else:
         return pd.DataFrame()
+
+
+def get_stock_fullname():
+    """
+    从缓存文件中获取股票全称
+    
+    Args:
+        stock_code: 股票代码
+        
+    Returns:
+        str: 股票全称,如果未找到则返回股票代码
+    """
+    try:
+        # 加载科创板和创业板的缓存文件
+        kechuang_file = os.path.join(CACHE_DIR, '科创板.json')
+        chuangye_file = os.path.join(CACHE_DIR, '创业板.json')
+        
+        # 初始化股票名称映射字典
+        stock_names = {}
+        
+        # 读取科创板数据
+        if os.path.exists(kechuang_file):
+            try:
+                with open(kechuang_file, 'r', encoding='utf-8') as f:
+                    kechuang_data = json.load(f)
+                    stock_names.update(kechuang_data)
+            except Exception as e:
+                print(f"读取科创板缓存文件失败: {str(e)}")
+                
+        # 读取创业板数据
+        if os.path.exists(chuangye_file):
+            try:
+                with open(chuangye_file, 'r', encoding='utf-8') as f:
+                    chuangye_data = json.load(f)
+                    stock_names.update(chuangye_data)
+            except Exception as e:
+                print(f"读取创业板缓存文件失败: {str(e)}")
+                
+        # 返回股票全称,如果未找到则返回股票代码
+        return stock_names
+        
+    except Exception as e:
+        print(f"获取股票全称异常: {str(e)}")
+        return None
+
+
+StockCodeToName = get_stock_fullname()
+
+print(StockCodeToName)
 
 def preprocess_all_stocks(all_stocks, start_date, end_date):
     """预先计算所有股票在整个回测期间的指标
@@ -804,7 +873,11 @@ def preprocess_stock(stock_code, start_date, end_date):
                 '吸筹指标': row['吸筹指标'] if '吸筹指标' in row else 0,
             }
             results.append(result_item)
-        
+            if stock_code == '002846' and str(idx) == '2024-04-18':
+                print('--debug 英联科技 002846')
+                print(result_item)
+                print('-'*80)
+            
         return results
     except Exception as e:
         print(f"预处理股票 {stock_code} 异常: {str(e)}")
@@ -1030,7 +1103,7 @@ def backtest_strategy(start_date, end_date, top_n=2, use_cache=True, force_recal
                             '盈利次数': wins,
                             '胜率': wins/total if total > 0 else 0,
                             '盈亏比': profit_loss_ratio,
-                            '月收益率': month_trades['收益率'].mean() if not month_trades.empty else 0,
+                            '月收益率': month_trades['收益率'].sum() if not month_trades.empty else 0,  # 改为sum()计算汇总值
                             '月收益金额': month_trades['收益金额'].sum()
                         })
                     except Exception as e:
@@ -1211,7 +1284,7 @@ def plot_stock_kline(stock_code, start_date=None, end_date=None, chart_dir='./ch
             print(f"获取股票名称异常: {str(e)}")
             stock_name = stock_code
             
-        # 布局设置
+        # 更新布局
         fig.update_layout(
             title={
                 'text': f'{stock_code} {stock_name} 吸筹策略信号分析',
@@ -1224,10 +1297,13 @@ def plot_stock_kline(stock_code, start_date=None, end_date=None, chart_dir='./ch
             font=dict(family='Arial, SimHei')  # 全局设置中文兼容字体
         )
         
+        # 设置X轴格式
         fig.update_xaxes(
             type='date',
-            tickformat='%Y-%m-%d',
+            tickformat='%Y-%m-%d',  # 设置日期格式为 2000-04-13
             rangeslider=dict(visible=False),
+            tickangle=45,  # 日期标签旋转45度，避免重叠
+            tickfont=dict(family='Arial, SimHei')  # 设置X轴字体
         )
         
         # 设置Y轴标题
@@ -1468,7 +1544,7 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                         <th>买入日期</th>
                         <th>卖出日期</th>
                         <th>股票代码</th>
-                        <th>股票名称</th>
+                     
                         <th>K线图</th>
                         <th>下影线性价比</th>
                         <th>下影加连阳</th>
@@ -1503,12 +1579,12 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                                 kline_link = "无"
                             
                             # 获取股票名称
-                            try:
-                                stock_name = ak.stock_individual_info_em(symbol=extract_digits_v3(stock_code))['value'][0]
-                                stock_name = str(stock_name)  # 确保是字符串
-                            except Exception as e:
-                                print(f"获取股票 {stock_code} 名称异常: {str(e)}")
-                                stock_name = stock_code
+                            # try:
+                            #     stock_name = ak.stock_individual_info_em(symbol=extract_digits_v3(stock_code))['value'][0]
+                            #     stock_name = str(stock_name)  # 确保是字符串
+                            # except Exception as e:
+                            #     print(f"获取股票 {stock_code} 名称异常: {str(e)}")
+                            #     stock_name = stock_code
                             
                             # 处理日期显示
                             signal_date = row['日期'].strftime('%Y-%m-%d')
@@ -1524,9 +1600,9 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                                 sell_date = row['卖出日期'].strftime('%Y-%m-%d')
                             
                             # 确保数值字段存在
-                            下影线性价比 = row.get('下影线性价比', 0)
-                            下影加连阳 = row.get('下影加连阳', 0)
-                            吸筹指标 = row.get('吸筹指标', 0)
+                            下影线性价比 = row.get('下影线性价比', '')
+                            下影加连阳 = row.get('下影加连阳', '')
+                            吸筹指标 = row.get('吸筹指标', '')
                             
                             html_content += f"""
                             <tr>
@@ -1534,7 +1610,7 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                                 <td>{buy_date}</td>
                                 <td>{sell_date}</td>
                                 <td>{stock_code}</td>
-                                <td>{stock_name}</td>
+                              
                                 <td>{kline_link}</td>
                                 <td>{下影线性价比:.2f}</td>
                                 <td>{下影加连阳:.2f}</td>
@@ -1648,9 +1724,9 @@ logging.basicConfig(
 
 if __name__ == '__main__':
     # 设置默认的回测参数（在try块外定义，确保始终可用）
-    start_date = datetime(2024, 1, 1)
-    end_date = datetime(2025, 1, 1)  # 测试1个月
-    top_n = 2  # 每天选择前2支股票
+    start_date = datetime(2025, 1, 1)
+    end_date = datetime(2025, 4, 18)  # 测试1个月
+    top_n = 1  # 每天选择前2支股票
     use_cache = True  # 是否使用缓存
     force_recalculate = False  # 是否强制重新计算
     stock_limit = 8000  # 默认限制处理前 8000只股票，可提高速度

@@ -30,37 +30,6 @@ pd.set_option('display.float_format', '{:.4f}'.format)  # 浮点数格式
 pd.set_option('display.colheader_justify', 'center')    # 列标题居中
 pd.set_option('display.precision', 4)       # 小数精度
 
-def get_active_stocks():
-    """
-    获取当前活跃交易的A股股票列表，剔除停牌、退市、ST等非交易状态的股票
-    
-    返回:
-        list: 活跃股票代码列表
-    """
-    try:
-        # 使用akshare获取A股实时行情数据
-        stock_zh_a_spot_df = ak.stock_zh_a_spot_em()
-        
-        # 过滤掉停牌的股票（通过成交量为0或价格为0来判断）
-        active_stocks = stock_zh_a_spot_df[
-            (stock_zh_a_spot_df['成交量'] > 0) & 
-            (stock_zh_a_spot_df['最新价'] > 0)
-        ]
-        
-       
-        # 提取股票代码列表
-        active_stock_codes = non_c_stocks['代码'].tolist()
-        
-        print(f"总股票数: {len(stock_zh_a_spot_df)}, 活跃股票数: {len(active_stocks)}, 非ST股票数: {len(non_st_stocks)}")
-        print(f"非科创板股票数: {len(non_kechuang)}, 非创业板股票数: {len(non_chuangye)}")
-        print(f"非北证50股票数: {len(non_beizheng)}, 非C股票数: {len(non_c_stocks)}")
-        print(f"最终获取到 {len(active_stock_codes)} 只符合条件的股票")
-        return active_stock_codes
-    
-    except Exception as e:
-        print(f"获取活跃股票列表异常: {str(e)}")
-        # 如果失败，回退到使用原始的get_all_stocks函数
-        return get_all_stocks()
 
 def test_daily_indicators(test_date_str="2025-03-05", top_n=10, stock_limit=None, use_active_only=True):
     """
@@ -164,15 +133,7 @@ def test_daily_indicators(test_date_str="2025-03-05", top_n=10, stock_limit=None
             display_df = filtered_df[available_columns].copy()
             
             # 格式化浮点数列
-            # float_cols = display_df.select_dtypes(include=['float']).columns
-            # for col in float_cols:
-            #     if col == '涨跌幅':
-            #         # 涨跌幅显示为百分比格式
-            #         display_df[col] = display_df[col].map(lambda x: f"{x*100:.2f}%")
-            #     else:
-            #         # 其他浮点数保留4位小数
-            #         display_df[col] = display_df[col].map(lambda x: f"{x:.4f}")
-            
+          
             # 尝试使用tabulate打印表格(如果已安装)
             try:
                 from tabulate import tabulate
@@ -203,7 +164,7 @@ if __name__ == "__main__":
     # 从命令行参数获取日期，默认为2025-03-05
     import argparse
     parser = argparse.ArgumentParser(description='测试指定日期的指标数据')
-    parser.add_argument('--date', type=str, default='2024-12-18', help='要测试的日期，格式为YYYY-MM-DD')
+    parser.add_argument('--date', type=str, default='2024-02-05', help='要测试的日期，格式为YYYY-MM-DD')
     parser.add_argument('--top', type=int, default=20000, help='要显示的股票数量')
     parser.add_argument('--limit', type=int, default=None, help='限制处理的股票数量')
     parser.add_argument('--all', action='store_true', help='使用所有股票，包括未交易的')
