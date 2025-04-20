@@ -356,84 +356,27 @@ def calculate_indicators_inner(df):
     # 阳线:=C>O;
     df['阳线'] = np.array(CLOSE_arr > OPEN_arr, dtype=bool)
     
+    # 计算真阳线
+    df['真阳线'] = (df['close'] > 0) & (df['close'] / df['close'].shift(1) >= 1)
+    
     # 前一天条件
-    X影线_arr = np.array(df['X影线'])
-    上影线_arr = np.array(df['上影线'])
-    cond1 = np.array(X影线_arr >= 上影线_arr * 2, dtype=bool)
+    df['前一天条件'] = (df['下影线']) & \
+                    (df['close'] / df['close'].shift(1) <= 1.03) & \
+                    (df['close'] >= df['open']) & \
+                    (df['close'] >= df['close'].shift(1)) & \
+                    (df['close'].shift(1) <= df['open'].shift(1)) & \
+                    (df['low'] < df['close'].shift(1))
     
-    # 安全处理比率计算
-    cond2 = np.zeros(len(CLOSE), dtype=bool)
-    ref_close = np.array(REF(CLOSE_arr, 1))
-    for i in range(len(CLOSE)):
-        if ref_close[i] > 0:  # 避免除以0
-            cond2[i] = CLOSE_arr[i] / ref_close[i] <= 1.03
+    # 计算下影线成功和失败
+    df['下影线成功'] = df['前一天条件'].shift(1) & (df['close'] / df['close'].shift(1) >= 1)
+    df['下影线失败'] = df['前一天条件'].shift(1) & (df['close'] / df['close'].shift(1) <= 1)
     
-    cond3 = np.array(CLOSE_arr >= OPEN_arr, dtype=bool)
-    cond4 = np.array(CLOSE_arr >= REF(CLOSE_arr, 1), dtype=bool)
+    # 计算下影线性价比
+    success_count = df['下影线成功'].rolling(120).sum()
+    failure_count = df['下影线失败'].rolling(120).sum()
+    df['下影线性价比'] = np.where(failure_count == 0, np.nan, success_count / failure_count)
     
-    # 安全处理前一天收盘与开盘比较
-    try:
-        ref_close = np.array(REF(CLOSE_arr, 1))
-        ref_open = np.array(REF(OPEN_arr, 1))
-        cond5 = np.array([rc <= ro for rc, ro in zip(ref_close, ref_open)], dtype=bool)
-    except:
-        cond5 = np.zeros(len(CLOSE), dtype=bool)  # 异常时设为False而不是True
     
-    cond6 = np.array(LOW_arr < REF(CLOSE_arr, 1), dtype=bool)
-    df['前一天条件'] = cond1 & cond2 & cond3 & cond4 & cond5 & cond6
-    
-    # 真阳线:=C>O AND C/REF(C,1)>=1;
-    cond1 = np.array(CLOSE_arr > OPEN_arr, dtype=bool)
-    
-    # 安全处理比率计算
-    cond2 = np.zeros(len(CLOSE), dtype=bool)
-    ref_close = np.array(REF(CLOSE_arr, 1))
-    for i in range(len(CLOSE)):
-        if ref_close[i] > 0:  # 避免除以0
-            cond2[i] = CLOSE_arr[i] / ref_close[i] >= 1
-    
-    df['真阳线'] = cond1 & cond2
-    
-    # 下影线成功:=COUNT(REF(前一天条件,1) AND C/REF(C,1)>=1,120);
-    前一天条件_arr = np.array(df['前一天条件'])
-    cond1 = np.array(REF(前一天条件_arr, 1), dtype=bool)
-    
-    # 安全处理比率计算
-    cond2 = np.zeros(len(CLOSE), dtype=bool)
-    ref_close = np.array(REF(CLOSE_arr, 1))
-    for i in range(len(CLOSE)):
-        if ref_close[i] > 0:  # 避免除以0
-            cond2[i] = CLOSE_arr[i] / ref_close[i] >= 1
-    
-    df['下影线成功条件'] = cond1 & cond2
-    df['下影线成功'] = COUNT(df['下影线成功条件'], 120)
-    
-    # 下影线失败:=COUNT(REF(前一天条件,1) AND C/REF(C,1)<=1,120);
-    cond1 = np.array(REF(前一天条件_arr, 1), dtype=bool)
-    
-    # 安全处理比率计算
-    cond2 = np.zeros(len(CLOSE), dtype=bool)
-    ref_close = np.array(REF(CLOSE_arr, 1))
-    for i in range(len(CLOSE)):
-        if ref_close[i] > 0:  # 避免除以0
-            cond2[i] = CLOSE_arr[i] / ref_close[i] <= 1
-    
-    df['下影线失败条件'] = cond1 & cond2
-    df['下影线失败'] = COUNT(df['下影线失败条件'], 120)
-    
-    # 下影线性价比:=下影线成功/下影线失败;
-    下影线成功_arr = np.array(df['下影线成功'])
-    下影线失败_arr = np.array(df['下影线失败'])
-    
-    # 修改下影线性价比计算逻辑：当下影线失败为0时，将性价比设为0，而不是一个很大的值
-    性价比 = np.zeros(len(下影线成功_arr))
-    for i in range(len(下影线成功_arr)):
-        if 下影线失败_arr[i] > 0:  # 只有当失败次数大于0时才计算比率
-            性价比[i] = 下影线成功_arr[i] / 下影线失败_arr[i]
-        else:
-            性价比[i] = 0  # 失败次数为0时，设置性价比为0
-    
-    df['下影线性价比'] = 性价比  # 使用新的计算方式
     
     # 连续阳线计算
     # ZD:=C>REF(C,1);
@@ -511,7 +454,7 @@ def calculate_indicators_inner(df):
     def find_bug(x):
         if x['t'] == '2024-02-05':
             print(x[['_cond1','_cond2','_cond3','_cond4','_cond5','_cond6','_cond7','_cond8','_cond9','吸筹指标','下影线性价比','下影加连阳','吸筹']])
-    df.apply(lambda x: find_bug(x), axis=1)
+    # df.apply(lambda x: find_bug(x), axis=1)
     return df
 
 def get_all_stocks():
