@@ -9,7 +9,7 @@ def extract_digits_v3(code):
 # 获取数据
 def get_kline(stock_code="000001"):
     stock_code = extract_digits_v3(stock_code)
-    df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", adjust="hfq")
+    df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", adjust="qfq")
     df.rename(columns={
         '日期':'date', '开盘':'open', '收盘':'close',
         '最高':'high', '最低':'low', '成交量':'volume'

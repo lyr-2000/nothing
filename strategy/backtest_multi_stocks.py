@@ -81,7 +81,7 @@ def get_cache_filename(stock_code, start_date, end_date):
 def get_kline(stock_code="000001", start_date: str = "19700101",
     end_date: str = "20500101",):
     stock_code = extract_digits_v3(stock_code)
-    df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", adjust="hfq", start_date = start_date,
+    df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", adjust="qfq", start_date = start_date,
     end_date =  end_date)
     if df.empty:
         raise Exception(f"获取 {stock_code} 数据失败 Empty")
@@ -91,17 +91,15 @@ def get_kline(stock_code="000001", start_date: str = "19700101",
     }, inplace=True)
     df['t'] = df['date']
     df['t'] = pd.to_datetime(df['t'])
-    df = _add_blocks(df,stock_code)
+    # df = _add_blocks(df,stock_code)
     return df.set_index('t')
 
 
 
-def _add_blocks(df, stock_code):
-    df['name'] = stock_code  # 实际应用应从接口获取名称
-    df['is_科创板'] = stock_code.startswith('688')
-    df['is_创业板'] = stock_code.startswith('300')
-    df['is_北证50'] = stock_code.startswith('8')
-    return df
+# def _add_blocks(df, stock_code):
+#     df['name'] = stock_code  # 实际应用应从接口获取名称
+   
+#     return df
 
 # 定义JSON日期序列化函数
 def date_converter(obj):
@@ -111,7 +109,8 @@ def date_converter(obj):
         return obj.strftime('%Y-%m-%d')
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-def get_stock_data(stock_code, start_date, end_date):
+debug = False
+def get_stock_data(stock_code, start_date, end_date,exclude_code=['002304','002127','002832']):
     """
     获取股票数据(带缓存)
     
@@ -126,7 +125,7 @@ def get_stock_data(stock_code, start_date, end_date):
         cache_file = get_cache_filename(stock_code, start_date, end_date)
         
         # 尝试从缓存读取数据
-        if os.path.exists(cache_file):
+        if os.path.exists(cache_file) and not debug and stock_code not in exclude_code:
             try:
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
@@ -159,7 +158,7 @@ def get_stock_data(stock_code, start_date, end_date):
             with open(cache_file, 'w', encoding='utf-8') as f:
                 json.dump(df_dict, f, ensure_ascii=False, default=date_converter)
                 
-            time.sleep(0.1)
+            # time.sleep(0.03)
             return df
         except Exception as e:
             print(f"获取 {stock_code} K线数据异常: {str(e)}")
@@ -210,7 +209,7 @@ def calculate_indicators_inner(df):
     df['MA120'] = MA(CLOSE, 120)
     
     # 计算KDJ
-    N = 6
+    N = 9
     M1 = 3
     M2 = 3
     P = 9
@@ -466,7 +465,7 @@ def calculate_indicators_inner(df):
     # 去除条件（这里暂时简化处理）
     # 去除:=S1 AND S2 AND S5 AND S4 AND S6 AND S7;
     df['去除'] = np.ones(len(CLOSE), dtype=bool)  # 全部设为True
-    
+    df['吸筹指标'] = df['VAR9']
     # 吸筹信号
     VAR9_arr = np.array(df['VAR9'])
     去除_arr = np.array(df['去除'])
@@ -503,22 +502,62 @@ def calculate_indicators_inner(df):
     return df
 
 def get_all_stocks():
-    """获取所有A股代码"""
+    """获取所有A股代码，并剔除未交易的股票和ST股票"""
     # 检查缓存文件
     cache_file = os.path.join(CACHE_DIR, 'stock_list.json')
-
-    # 如果缓存文件存在且未过期(24小时),直接返回缓存数据
-    if os.path.exists(cache_file):
-        with open(cache_file, 'r', encoding='utf-8') as f:
-            cache_data = json.load(f)
-            if time.time() - cache_data['timestamp'] < 24 * 3600:
-                print("从缓存加载股票列表")
-                return cache_data['codes']
 
     try:
         # 使用akshare获取股票列表
         stock_list = ak.stock_zh_a_spot_em()
-        codes = stock_list['代码'].tolist()
+        
+        # 添加股票属性信息
+        stock_list['S1'] = ~stock_list['名称'].str.contains('S')  # 非S股
+        stock_list['S2'] = ~stock_list['名称'].str.contains('\*')  # 非*股
+        stock_list['S4'] = ~stock_list['名称'].str.contains('科创板')  # 非科创板
+        stock_list['S5'] = ~stock_list['名称'].str.contains('C')  # 非C股
+        stock_list['S6'] = ~stock_list['名称'].str.contains('创业板')  # 非创业板
+        stock_list['S7'] = ~stock_list['名称'].str.contains('北证50')  # 非北证50
+        
+        # 导出股票列表到CSV文件
+        export_columns = ['代码', '名称', 'S1', 'S2', 'S4', 'S5', 'S6', 'S7']
+        stock_list[export_columns].to_csv('stock_list.csv', index=False, encoding='utf-8-sig')
+        print("股票列表已导出到 stock_list.csv")
+        
+        # 剔除未交易的股票（通过成交量和最新价判断）
+        active_stocks = stock_list[
+            (stock_list['成交量'] > 0) & 
+            (stock_list['最新价'] > 0)
+        ]
+        
+        # 剔除ST股票（通过名称中是否包含"ST"判断）
+        non_st_stocks = active_stocks[
+            ~active_stocks['名称'].str.contains('ST|st|S\.T|退') 
+        ]
+        
+        # 使用名称过滤不同类型的股票
+        non_s_stocks = non_st_stocks[~non_st_stocks['名称'].str.contains('S')]  # 非S股
+        non_star_stocks = non_s_stocks[~non_s_stocks['名称'].str.contains('\*')]  # 非*股
+        non_kechuang = non_star_stocks[~non_star_stocks['名称'].str.contains('科创板')]  # 非科创板
+        non_c_stocks = non_kechuang[~non_kechuang['名称'].str.contains('C')]  # 非C股
+        non_chuangye = non_c_stocks[~non_c_stocks['名称'].str.contains('创业板')]  # 非创业板
+        non_beizheng = non_chuangye[~non_chuangye['名称'].str.contains('北证50')]  # 非北证50
+        
+        print(f"总股票数: {len(stock_list)}, 活跃股票数: {len(active_stocks)}, 非ST股票数: {len(non_st_stocks)}, "
+              f"非S股数: {len(non_s_stocks)}, 非*股数: {len(non_star_stocks)}, "
+              f"非科创板股票数: {len(non_kechuang)}, 非C股数: {len(non_c_stocks)}, "
+              f"非创业板股票数: {len(non_chuangye)}, 非北证50股票数: {len(non_beizheng)}")
+        
+        # 提取股票代码
+        codes = non_beizheng['代码'].tolist()
+        
+        # 缓存股票名称映射
+        try:
+            name_mapping = dict(zip(non_beizheng['代码'], non_beizheng['名称']))
+            name_cache_file = os.path.join(CACHE_DIR, 'stock_names.json')
+            with open(name_cache_file, 'w', encoding='utf-8') as f:
+                json.dump(name_mapping, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"缓存股票名称映射异常: {str(e)}")
 
         # 保存到缓存
         cache_data = {
@@ -527,7 +566,8 @@ def get_all_stocks():
         }
         with open(cache_file, 'w', encoding='utf-8') as f:
             json.dump(cache_data, f)
-
+            
+        print(f"获取到 {len(codes)} 只符合条件的股票")
         return codes
 
     except Exception as e:
@@ -535,7 +575,7 @@ def get_all_stocks():
         # 如果发生异常且缓存文件存在,返回过期的缓存数据
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
-                return json.load(f)['codes'][:20]
+                return json.load(f)['codes']
         return []
 
 def process_single_stock(stock_code, date):
@@ -581,14 +621,20 @@ def process_single_stock(stock_code, date):
                 '日期': closest_date,
                 '下影线性价比': target_day['下影线性价比'],
                 '收盘价': target_day['close'],  # 改为小写
+                '吸筹指标': target_day['吸筹指标'],
+                '下影加连阳': target_day['下影加连阳'],
+                # '涨跌幅': target_day['涨跌幅'],
             }
         return None
     except Exception as e:
         print(f"处理股票 {stock_code} 数据异常: {str(e)}")
         return None
 
-def select_stocks_from_preprocessed(date, all_stock_results, top_n=2):
-    """从预处理的结果中选择指定日期的前N支股票"""
+def select_stocks_from_preprocessed(date, all_stock_results, top_n=10):
+    """从预处理的结果中选择指定日期的前N支股票
+    
+    优先按照"下影加连阳"降序排序，若值相同则按"下影线性价比"降序排序，最后按"吸筹指标"降序排序
+    """
     # 获取当天的股票
     date_key = date.date()
     
@@ -598,11 +644,46 @@ def select_stocks_from_preprocessed(date, all_stock_results, top_n=2):
     # 获取当天的结果
     day_results = all_stock_results[date_key]
     
-    # 按下影线性价比降序排序
+    # 按"下影加连阳"降序排序，若值相同则按"下影线性价比"降序排序
     if day_results:
         results_df = pd.DataFrame(day_results)
-        results_df = results_df.sort_values(by='下影线性价比', ascending=False)
-        return results_df.head(top_n)
+        
+        # 确保预处理结果中包含所需的所有字段
+        required_fields = ['下影加连阳', '下影线性价比', '吸筹指标']
+        missing_fields = [field for field in required_fields if field not in results_df.columns]
+        if missing_fields:
+            print(f"警告: 预处理数据中缺少以下字段: {', '.join(missing_fields)}")
+            print(f"可用字段: {list(results_df.columns)}")
+            # 如果缺少下影加连阳字段，尝试使用下影线性价比代替
+            if '下影加连阳' not in results_df.columns and '下影线性价比' in results_df.columns:
+                results_df['下影加连阳'] = results_df['下影线性价比']
+                print("使用'下影线性价比'作为'下影加连阳'的替代")
+            # 如果缺少吸筹指标字段，设置默认值0
+            if '吸筹指标' not in results_df.columns:
+                results_df['吸筹指标'] = 0
+                print("设置'吸筹指标'默认值为0")
+        
+        # 打印列信息用于调试
+        print(f"DataFrame列: {results_df.columns.tolist()}")
+        
+        # 使用多级排序
+        sort_columns = []
+        # 依次添加排序字段（如果存在）
+        for col in ['下影加连阳', '下影线性价比', '吸筹指标']:
+            # if col in results_df.columns:
+            sort_columns.append(col)
+        
+        print(f"排序字段: {sort_columns}")
+        
+        # 所有字段都按降序排序
+        if sort_columns:
+            results_df = results_df.sort_values(by=sort_columns, ascending=[False] * len(sort_columns))
+        else:
+            print("警告: 没有可用的排序字段，返回原始数据")
+        
+        results_df=results_df[results_df['吸筹指标']>5]
+        
+        return results_df.head(top_n).copy()
     else:
         return pd.DataFrame()
 
@@ -685,6 +766,8 @@ def preprocess_all_stocks(all_stocks, start_date, end_date):
 def preprocess_stock(stock_code, start_date, end_date):
     """处理单个股票在整个回测期间的数据，返回所有符合条件的日期点"""
     try:
+        # 检查股票代码是否符合过滤条件
+      
         # 获取数据
         df = get_stock_data(stock_code, start_date, end_date)
         if df is None or df.empty:
@@ -703,12 +786,24 @@ def preprocess_stock(stock_code, start_date, end_date):
         # 提取结果
         results = []
         for idx, row in signal_days.iterrows():
-            results.append({
+            # 确保收盘价是一个有效的数值
+            if pd.isna(row['close']):
+                print(f"警告: {stock_code} 在 {idx} 的收盘价为空")
+                continue
+                
+            # 将收盘价转换为浮点数以确保格式一致
+            
+            result_item = {
                 '股票代码': stock_code,
                 '日期': idx,
                 '下影线性价比': row['下影线性价比'],
+                '下影加连阳': row['下影加连阳'],
                 '收盘价': row['close'],
-            })
+                'close':row['close'],
+                'open':row['open'],
+                '吸筹指标': row['吸筹指标'] if '吸筹指标' in row else 0,
+            }
+            results.append(result_item)
         
         return results
     except Exception as e:
@@ -857,6 +952,7 @@ def backtest_strategy(start_date, end_date, top_n=2, use_cache=True, force_recal
                                 
                                 # 获取对应的日期对象
                                 buy_date = stock_data.index[current_idx]
+                                # 第二天就卖出
                                 sell_date = stock_data.index[next_idx]
                                 
                                 # 使用当日收盘价买入
@@ -1326,6 +1422,7 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                         <th>胜率 (%)</th>
                         <th>盈亏比</th>
                         <th>月收益率 (%)</th>
+                        <th>月收益金额</th>
                     </tr>
                 """
 
@@ -1339,13 +1436,14 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                             <td>{row['胜率']*100:.2f}%</td>
                             <td>{profit_loss_ratio:.2f}</td>
                             <td class="{'positive' if row['月收益率'] > 0 else 'negative'}">{row['月收益率']*100:.2f}%</td>
+                            <td class="{'positive' if row['月收益金额'] > 0 else 'negative'}">{row['月收益金额']:.2f}</td>
                         </tr>
                         """
                     except Exception as e:
                         logging.error(f"生成月度行记录异常: {str(e)}", exc_info=True)
                         html_content += f"""
                         <tr>
-                            <td colspan="5" class="warning">处理月度记录时出错</td>
+                            <td colspan="6" class="warning">处理月度记录时出错</td>
                         </tr>
                         """
                         continue
@@ -1370,8 +1468,11 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                         <th>买入日期</th>
                         <th>卖出日期</th>
                         <th>股票代码</th>
+                        <th>股票名称</th>
                         <th>K线图</th>
                         <th>下影线性价比</th>
+                        <th>下影加连阳</th>
+                        <th>吸筹指标</th>
                         <th>买入价</th>
                         <th>卖出价</th>
                         <th>收益率 (%)</th>
@@ -1379,54 +1480,85 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                     </tr>
                 """
 
-                for _, row in trades_df.iterrows():
-                    try:
-                        stock_code = row['股票代码']
-                        chart_filename = chart_files.get(stock_code, None)
-                        
-                        if chart_filename:
-                            # 构建相对URL路径
-                            chart_url = f"{chart_rel_path}/{chart_filename}"
-                            kline_link = f"""<a href="{chart_url}" target="_blank" class="kline-link">查看K线</a>"""
-                        else:
-                            kline_link = "无"
-                        
-                        # 处理日期显示
-                        signal_date = row['日期'].strftime('%Y-%m-%d')
-                        
-                        # 处理买入日期和卖出日期
-                        buy_date = signal_date  # 默认使用信号日期
-                        sell_date = "未知"  # 默认值
-                        
-                        if '买入日期' in row and pd.notna(row['买入日期']):
-                            buy_date = row['买入日期'].strftime('%Y-%m-%d')
-                        
-                        if '卖出日期' in row and pd.notna(row['卖出日期']):
-                            sell_date = row['卖出日期'].strftime('%Y-%m-%d')
-                        
-                        html_content += f"""
-                        <tr>
-                            <td>{signal_date}</td>
-                            <td>{buy_date}</td>
-                            <td>{sell_date}</td>
-                            <td>{stock_code}</td>
-                            <td>{kline_link}</td>
-                            <td>{row['下影线性价比']:.2f}</td>
-                            <td>{row['买入价']:.2f}</td>
-                            <td>{row['卖出价']:.2f}</td>
-                            <td class="{'positive' if row['收益率'] > 0 else 'negative'}">{row['收益率']*100:.2f}%</td>
-                            <td class="{'positive' if row['收益金额'] > 0 else 'negative'}">{row['收益金额']:.2f}</td>
-                        </tr>
-                        """
-                    except Exception as e:
-                        logging.error(f"生成交易记录异常: {str(e)}", exc_info=True)
-                        continue
+                # 确保所有必要的列都存在
+                required_columns = ['日期', '股票代码', '买入价', '卖出价', '收益率', '收益金额']
+                missing_columns = [col for col in required_columns if col not in trades_df.columns]
+                if missing_columns:
+                    print(f"警告: 交易数据中缺少以下列: {missing_columns}")
+                    html_content += f"""
+                    <tr>
+                        <td colspan="13" class="warning">交易数据不完整，缺少以下列: {', '.join(missing_columns)}</td>
+                    </tr>
+                    """
+                else:
+                    for _, row in trades_df.iterrows():
+                        try:
+                            stock_code = row['股票代码']
+                            chart_filename = chart_files.get(stock_code, None)
+                            
+                            if chart_filename:
+                                chart_url = f"{chart_rel_path}/{chart_filename}"
+                                kline_link = f"""<a href="{chart_url}" target="_blank" class="kline-link">查看K线</a>"""
+                            else:
+                                kline_link = "无"
+                            
+                            # 获取股票名称
+                            try:
+                                stock_name = ak.stock_individual_info_em(symbol=extract_digits_v3(stock_code))['value'][0]
+                                stock_name = str(stock_name)  # 确保是字符串
+                            except Exception as e:
+                                print(f"获取股票 {stock_code} 名称异常: {str(e)}")
+                                stock_name = stock_code
+                            
+                            # 处理日期显示
+                            signal_date = row['日期'].strftime('%Y-%m-%d')
+                            
+                            # 处理买入日期和卖出日期
+                            buy_date = signal_date  # 默认使用信号日期
+                            sell_date = "未知"  # 默认值
+                            
+                            if '买入日期' in row and pd.notna(row['买入日期']):
+                                buy_date = row['买入日期'].strftime('%Y-%m-%d')
+                            
+                            if '卖出日期' in row and pd.notna(row['卖出日期']):
+                                sell_date = row['卖出日期'].strftime('%Y-%m-%d')
+                            
+                            # 确保数值字段存在
+                            下影线性价比 = row.get('下影线性价比', 0)
+                            下影加连阳 = row.get('下影加连阳', 0)
+                            吸筹指标 = row.get('吸筹指标', 0)
+                            
+                            html_content += f"""
+                            <tr>
+                                <td>{signal_date}</td>
+                                <td>{buy_date}</td>
+                                <td>{sell_date}</td>
+                                <td>{stock_code}</td>
+                                <td>{stock_name}</td>
+                                <td>{kline_link}</td>
+                                <td>{下影线性价比:.2f}</td>
+                                <td>{下影加连阳:.2f}</td>
+                                <td>{吸筹指标:.2f}</td>
+                                <td>{row['买入价']:.2f}</td>
+                                <td>{row['卖出价']:.2f}</td>
+                                <td class="{'positive' if row['收益率'] > 0 else 'negative'}">{row['收益率']*100:.2f}%</td>
+                                <td class="{'positive' if row['收益金额'] > 0 else 'negative'}">{row['收益金额']:.2f}</td>
+                            </tr>
+                            """
+                        except Exception as e:
+                            print(f"处理交易记录异常: {str(e)}")
+                            html_content += f"""
+                            <tr>
+                                <td colspan="13" class="warning">处理交易记录时出错: {str(e)}</td>
+                            </tr>
+                            """
+                            continue
 
                 html_content += """
                 </table>
                 """
             except Exception as e:
-                logging.error(f"生成交易记录表异常: {str(e)}", exc_info=True)
+                print(f"生成交易记录表异常: {str(e)}")
                 html_content += f"""
                 <div class="warning">生成交易记录时出错: {str(e)}</div>
                 """
@@ -1516,8 +1648,8 @@ logging.basicConfig(
 
 if __name__ == '__main__':
     # 设置默认的回测参数（在try块外定义，确保始终可用）
-    start_date = datetime(2023, 12, 1)
-    end_date = datetime(2025, 2, 1)  # 测试1个月
+    start_date = datetime(2024, 1, 1)
+    end_date = datetime(2025, 1, 1)  # 测试1个月
     top_n = 2  # 每天选择前2支股票
     use_cache = True  # 是否使用缓存
     force_recalculate = False  # 是否强制重新计算

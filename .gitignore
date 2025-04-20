@@ -9,3 +9,4 @@ backtest_result/
 backtest_result
 *.html
 *.txt
+.csv
