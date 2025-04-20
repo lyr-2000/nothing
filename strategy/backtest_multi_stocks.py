@@ -1555,9 +1555,9 @@ def generate_report(trades_df, monthly_df, final_capital, initial_capital=10000,
                                 <td>{stock_code}</td>
                               
                                 <td>{kline_link}</td>
-                                <td>{下影线性价比:.2f}</td>
-                                <td>{下影加连阳:.2f}</td>
-                                <td>{吸筹指标:.2f}</td>
+                                <td>{下影线性价比}</td>
+                                <td>{下影加连阳}</td>
+                                <td>{吸筹指标}</td>
                                 <td>{row['买入价']:.2f}</td>
                                 <td>{row['卖出价']:.2f}</td>
                                 <td class="{'positive' if row['收益率'] > 0 else 'negative'}">{row['收益率']*100:.2f}%</td>
@@ -1667,8 +1667,8 @@ logging.basicConfig(
 
 if __name__ == '__main__':
     # 设置默认的回测参数（在try块外定义，确保始终可用）
-    start_date = datetime(2025, 1, 1)
-    end_date = datetime(2025, 4, 18)  # 测试1个月
+    start_date = datetime(2023, 1, 1)
+    end_date = datetime(2023, 12, 30)  # 测试1个月
     top_n = 1  # 每天选择前2支股票
     use_cache = True  # 是否使用缓存
     force_recalculate = False  # 是否强制重新计算
